@@ -1,0 +1,796 @@
+{
+  "info": {
+    "name": "PlayerWallet API",
+    "description": "Run requests top-to-bottom within each folder. Baseline run uses a fresh server (restart PlayerWallet.Api to reset in-memory state).",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "9f4c7a20-1c1a-4a3e-a5f0-playerwallet001"
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:5000",
+      "type": "string"
+    },
+    {
+      "key": "playerId",
+      "value": "11111111-1111-1111-1111-111111111111",
+      "type": "string",
+      "description": "Primary test player used by most flows."
+    },
+    {
+      "key": "otherPlayerId",
+      "value": "22222222-2222-2222-2222-222222222222",
+      "type": "string",
+      "description": "Secondary player used by idempotency scenarios."
+    },
+    {
+      "key": "unknownPlayerId",
+      "value": "99999999-9999-9999-9999-999999999999",
+      "type": "string",
+      "description": "Player that is never registered."
+    },
+    {
+      "key": "txIdempotentAccepted",
+      "value": "bbbbbbbb-0000-0000-0000-000000000001",
+      "type": "string",
+      "description": "Fixed transactionId for testing accepted idempotency."
+    },
+    {
+      "key": "txIdempotentRejected",
+      "value": "bbbbbbbb-0000-0000-0000-000000000002",
+      "type": "string",
+      "description": "Fixed transactionId for testing rejected-to-accepted retry."
+    }
+  ],
+  "item": [
+    {
+      "name": "1. Registration",
+      "item": [
+        {
+          "name": "Register wallet (201 Created)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201 Created', () => pm.response.to.have.status(201));",
+                  "const body = pm.response.json();",
+                  "pm.test('Returned playerId matches', () => pm.expect(body.playerId).to.eql(pm.collectionVariables.get('playerId')));",
+                  "pm.test('Initial balance is 0', () => pm.expect(body.balance).to.eql(0));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{playerId}}/wallet",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{playerId}}", "wallet"]
+            }
+          }
+        },
+        {
+          "name": "Register wallet — duplicate (409 Conflict)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 409 Conflict', () => pm.response.to.have.status(409));",
+                  "pm.test('Error message present', () => pm.expect(pm.response.json().error).to.include('already registered'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{playerId}}/wallet",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{playerId}}", "wallet"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "2. Balance",
+      "item": [
+        {
+          "name": "Get balance — non-existent player (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{unknownPlayerId}}/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{unknownPlayerId}}", "balance"]
+            }
+          }
+        },
+        {
+          "name": "Get balance — existing player",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Returned playerId matches', () => pm.expect(body.playerId).to.eql(pm.collectionVariables.get('playerId')));",
+                  "pm.test('Balance is a number', () => pm.expect(body.balance).to.be.a('number'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{playerId}}/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{playerId}}", "balance"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "3. Transactions — happy path",
+      "item": [
+        {
+          "name": "Deposit 100 (accepted)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Status accepted', () => pm.expect(pm.response.json().status).to.eql('accepted'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"Deposit\",\n  \"amount\": 100\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{playerId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{playerId}}", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Win 30 (accepted)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Status accepted', () => pm.expect(pm.response.json().status).to.eql('accepted'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"Win\",\n  \"amount\": 30\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{playerId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{playerId}}", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Stake 40 (accepted)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Status accepted', () => pm.expect(pm.response.json().status).to.eql('accepted'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"Stake\",\n  \"amount\": 40\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{playerId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{playerId}}", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Get balance (expect 90 after Deposit+Win-Stake)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Balance is 90', () => pm.expect(pm.response.json().balance).to.eql(90));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{playerId}}/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{playerId}}", "balance"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "4. Rejection & edge cases",
+      "item": [
+        {
+          "name": "Stake 10000 (rejected — insufficient funds)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Status rejected', () => pm.expect(pm.response.json().status).to.eql('rejected'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"Stake\",\n  \"amount\": 10000\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{playerId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{playerId}}", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Credit for non-existent player (404)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 404', () => pm.response.to.have.status(404));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"Deposit\",\n  \"amount\": 100\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{unknownPlayerId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{unknownPlayerId}}", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Stake exact balance 90 (accepted, balance -> 0)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Status accepted', () => pm.expect(pm.response.json().status).to.eql('accepted'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"Stake\",\n  \"amount\": 90\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{playerId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{playerId}}", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Get balance (expect 0)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "pm.test('Balance is 0', () => pm.expect(pm.response.json().balance).to.eql(0));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{playerId}}/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{playerId}}", "balance"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Idempotency",
+      "description": "Uses {{otherPlayerId}}. Tests: accepted replay, rejected replay, and rejected-to-accepted transition after deposit.",
+      "item": [
+        {
+          "name": "Step 1: Register second player",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 201', () => pm.response.to.have.status(201));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{otherPlayerId}}/wallet",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{otherPlayerId}}", "wallet"]
+            }
+          }
+        },
+        {
+          "name": "Step 2: Deposit 100 (accepted) — balance: 100",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status accepted', () => pm.expect(pm.response.json().status).to.eql('accepted'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": \"{{txIdempotentAccepted}}\",\n  \"type\": \"Deposit\",\n  \"amount\": 100\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{otherPlayerId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{otherPlayerId}}", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Step 3: Replay Deposit 100 (accepted idempotent, no double apply)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status accepted on replay', () => pm.expect(pm.response.json().status).to.eql('accepted'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": \"{{txIdempotentAccepted}}\",\n  \"type\": \"Deposit\",\n  \"amount\": 100\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{otherPlayerId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{otherPlayerId}}", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Step 4: Check balance (expect 100, not 200)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Balance is 100 — replay did not double-apply', () => pm.expect(pm.response.json().balance).to.eql(100));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{otherPlayerId}}/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{otherPlayerId}}", "balance"]
+            }
+          }
+        },
+        {
+          "name": "Step 5: Stake 500 (rejected — balance is only 100)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status rejected', () => pm.expect(pm.response.json().status).to.eql('rejected'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": \"{{txIdempotentRejected}}\",\n  \"type\": \"Stake\",\n  \"amount\": 500\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{otherPlayerId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{otherPlayerId}}", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Step 6: Replay Stake 500 (still rejected — balance unchanged)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status still rejected', () => pm.expect(pm.response.json().status).to.eql('rejected'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": \"{{txIdempotentRejected}}\",\n  \"type\": \"Stake\",\n  \"amount\": 500\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{otherPlayerId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{otherPlayerId}}", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Step 7: Check balance (still 100)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Balance still 100', () => pm.expect(pm.response.json().balance).to.eql(100));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{otherPlayerId}}/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{otherPlayerId}}", "balance"]
+            }
+          }
+        },
+        {
+          "name": "Step 8: Deposit 500 (top up so Stake can succeed) — balance: 600",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status accepted', () => pm.expect(pm.response.json().status).to.eql('accepted'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"type\": \"Deposit\",\n  \"amount\": 500\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{otherPlayerId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{otherPlayerId}}", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Step 9: Check balance (expect 600)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Balance is 600', () => pm.expect(pm.response.json().balance).to.eql(600));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{otherPlayerId}}/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{otherPlayerId}}", "balance"]
+            }
+          }
+        },
+        {
+          "name": "Step 10: Replay Stake 500 (NOW ACCEPTED — balance changed, retry succeeds)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status accepted — previously rejected, now affordable', () => pm.expect(pm.response.json().status).to.eql('accepted'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": \"{{txIdempotentRejected}}\",\n  \"type\": \"Stake\",\n  \"amount\": 500\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{otherPlayerId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{otherPlayerId}}", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Step 11: Check balance (expect 100 = 600 - 500)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Balance is 100', () => pm.expect(pm.response.json().balance).to.eql(100));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{otherPlayerId}}/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{otherPlayerId}}", "balance"]
+            }
+          }
+        },
+        {
+          "name": "Step 12: Replay Stake 500 again (accepted idempotent, no double deduction)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status accepted — idempotent after transition', () => pm.expect(pm.response.json().status).to.eql('accepted'));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              { "key": "Content-Type", "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactionId\": \"{{txIdempotentRejected}}\",\n  \"type\": \"Stake\",\n  \"amount\": 500\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{otherPlayerId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{otherPlayerId}}", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Step 13: Check balance (still 100 — no double deduction)",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Balance still 100 — replay did not deduct again', () => pm.expect(pm.response.json().balance).to.eql(100));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{otherPlayerId}}/balance",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{otherPlayerId}}", "balance"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "6. List transactions",
+      "item": [
+        {
+          "name": "Get transactions for main player",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Response is an array', () => pm.expect(body).to.be.an('array'));",
+                  "pm.test('Contains at least one transaction', () => pm.expect(body.length).to.be.greaterThan(0));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{playerId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{playerId}}", "transactions"]
+            }
+          }
+        },
+        {
+          "name": "Get transactions for second player",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test('Status is 200', () => pm.response.to.have.status(200));",
+                  "const body = pm.response.json();",
+                  "pm.test('Has transactions', () => pm.expect(body.length).to.be.greaterThan(0));"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/players/{{otherPlayerId}}/transactions",
+              "host": ["{{baseUrl}}"],
+              "path": ["api", "players", "{{otherPlayerId}}", "transactions"]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
