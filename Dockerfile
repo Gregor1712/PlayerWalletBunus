@@ -6,6 +6,7 @@ COPY Directory.Build.props .
 COPY PlayerWallet.Api/PlayerWallet.Api.csproj PlayerWallet.Api/
 COPY PlayerWallet.Application/PlayerWallet.Application.csproj PlayerWallet.Application/
 COPY PlayerWallet.Domain/PlayerWallet.Domain.csproj PlayerWallet.Domain/
+COPY PlayerWallet.Infrastructure/PlayerWallet.Infrastructure.csproj PlayerWallet.Infrastructure/
 COPY PlayerWallet.Tests/PlayerWallet.Tests.csproj PlayerWallet.Tests/
 RUN dotnet restore
 
